@@ -1,5 +1,77 @@
 const usuarioModel = require('../models/UsuariosModel');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const TokenInvalido = require('../models/TokenInvalido');
+
+//LOGIN
+const SECRET_KEY = "mi_secreto_super_seguro";
+
+async function login(req, res) {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).send({ mensaje: "Email y password son obligatorios" });
+        }
+
+        const usuario = await usuarioModel.findOne({ email });
+        if (!usuario) {
+            return res.status(404).send({ mensaje: "Usuario no encontrado" });
+        }
+
+        const coincide = await bcrypt.compare(password, usuario.password);
+        if (!coincide) {
+            return res.status(401).send({ mensaje: "Contraseña incorrecta" });
+        }
+
+        const token = jwt.sign(
+            {
+                id: usuario._id,
+                email: usuario.email,
+                rol: usuario.rol
+            },
+            SECRET_KEY,
+            { expiresIn: '7d' } // token válido por 7 días (opcional: puedes quitar esto para hacerlo "infinito")
+        );
+
+        return res.status(200).send({
+            mensaje: "Login exitoso",
+            token,
+            usuario: {
+                nombre: usuario.nombre,
+                email: usuario.email,
+                rol: usuario.rol
+            }
+        });
+    } catch (error) {
+        return res.status(500).send({ mensaje: "Error en el login", error });
+    }
+}
+
+
+//LOGOUT
+async function logout(req, res) {
+    try {
+        const token = req.headers['authorization']?.replace("Bearer ", "");
+        if (!token) return res.status(400).send({ mensaje: "Token no proporcionado" });
+
+        const decoded = jwt.decode(token);
+        if (!decoded) return res.status(400).send({ mensaje: "Token no válido" });
+
+        await TokenInvalido.create({
+            token,
+            expiracion: new Date(decoded.exp * 1000)
+        });
+
+        return res.status(200).send({ mensaje: "Sesión cerrada correctamente" });
+    } catch (error) {
+        return res.status(500).send({ mensaje: "Error al cerrar sesión", error });
+    }
+}
+
+
+
+
 
 // Obtener todos los usuarios
 function buscarTodosUsuarios(req, res) {
@@ -123,5 +195,7 @@ module.exports = {
     buscarUsuario,
     mostrarUsuario,
     eliminarUsuario,
-    actualizarUsuario
+    actualizarUsuario,
+    login,
+    logout
 };
